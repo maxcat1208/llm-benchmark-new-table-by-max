@@ -56,6 +56,16 @@ runner 内置 watchdog：默认每 60 秒检查输出目录；如果连续 1800 
 
 EvalScope 在部分请求失败时可能返回非 0 exit code。只要该阶段已经有成功请求，runner 会写 WARN 并继续后续阶段；没有成功请求才停止。
 
+### 参数安全
+
+通过 `powershell.exe -File` 传并发数组时，始终使用一个逗号分隔字符串：
+
+```powershell
+-ParallelLevels "8,16,32,64"
+```
+
+不要让外层脚本把 `8,16,32,64` 绑定到 `[int[]]` 参数；Windows PowerShell 可能把它解析成单个整数 `8163264`，导致 EvalScope 生成 `parallel_8163264_number_81632640` 这类错误任务。
+
 ## 只填已有结果
 
 短文本结果填入 `speed_benchmark`：
@@ -142,6 +152,15 @@ Get-Content ".\llm-benchmark-runs\20260525-Qwen3.5-122B-A10B\status.json"
 Get-Content ".\llm-benchmark-runs\20260525-Qwen3.5-122B-A10B\logs\run.log" -Tail 20
 ```
 
+判断真实进度时，同时看 EvalScope 日志和并发目录：
+
+```powershell
+Get-Content ".\llm-benchmark-runs\...\outputs\short\<model>\benchmark.log" -Tail 80
+Get-ChildItem ".\llm-benchmark-runs\...\outputs\short\<model>" -Directory
+```
+
+`status.json` 的 `idle_sec` 是 watchdog 信号，不是唯一事实来源；如果日志、`benchmark_data.db` 或 `benchmark_summary.json` 长时间不变，应以这些 EvalScope 输出为准判断是否卡住。
+
 ## 故障处理
 
 - `benchmark_percentile.json` 缺失：该并发没有完整分位数输出，对应行不会填。
@@ -150,3 +169,5 @@ Get-Content ".\llm-benchmark-runs\20260525-Qwen3.5-122B-A10B\logs\run.log" -Tail
 - `Cannot run 'conda run -n ... evalscope --help'`：本机没有可用的 EvalScope conda 环境，或环境名不对。让用户手动准备环境，或用 `-EvalScopeCondaEnv` 指向已有环境。
 - `status.json` 显示 `no output progress`：当前阶段输出目录长期没有变化，watchdog 已停止子进程。
 - `run.log` 显示 `exited with code 1 but produced successful requests`：有部分请求失败，但已有可汇总成功数据，runner 会继续。
+- 批量顺序跑多个模型时，不要一次性并行启动全部模型，除非明确要压满服务；默认逐个模型跑，避免 OOM、API 拥塞和难以定位失败。
+- 需要跳过当前模型时，只停止当前模型 runner 的子进程树，不要停止批次父进程。批次脚本通常会把该模型记入 `failed_models`，然后继续下一个模型；如果没有专门的 `skipped` 字段，把它视为已跳过。

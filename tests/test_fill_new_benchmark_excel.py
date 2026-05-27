@@ -1,4 +1,5 @@
 import os
+import json
 import shutil
 import sys
 import tempfile
@@ -37,16 +38,25 @@ class FillNewBenchmarkExcelTest(unittest.TestCase):
 
             wb = load_workbook(target, data_only=True)
             ws = wb["speed_benchmark"]
+            with (SOURCE_DIR / "parallel_8_number_80" / "benchmark_percentile.json").open(
+                encoding="utf-8-sig"
+            ) as f:
+                p1 = json.load(f)[0]
+            with (SOURCE_DIR / "parallel_8_number_80" / "benchmark_summary.json").open(
+                encoding="utf-8-sig"
+            ) as f:
+                summary = json.load(f)
+
             self.assertEqual(ws["A38"].value, "Qwen3.5-122B-A10B")
             self.assertEqual(ws["B38"].value, 8)
             self.assertEqual(ws["C38"].value, 0.01)
-            self.assertAlmostEqual(ws["D38"].value, 50.94, places=2)
-            self.assertAlmostEqual(ws["E38"].value, 220.72, places=2)
-            self.assertAlmostEqual(ws["J38"].value, 28.82, places=2)
-            self.assertAlmostEqual(ws["M38"].value, 496.928, places=3)
-            self.assertEqual(ws["P38"].value, 80)
-            self.assertEqual(ws["Q38"].value, 60)
-            self.assertEqual(ws["R38"].value, 20)
+            self.assertAlmostEqual(ws["D38"].value, p1["Latency (s)"], places=2)
+            self.assertAlmostEqual(ws["E38"].value, p1["TTFT (ms)"], places=2)
+            self.assertAlmostEqual(ws["J38"].value, p1["Output (tok/s)"], places=2)
+            self.assertAlmostEqual(ws["M38"].value, summary["Test Duration (s)"], places=3)
+            self.assertEqual(ws["P38"].value, summary["Total Requests"])
+            self.assertEqual(ws["Q38"].value, summary["Success Requests"])
+            self.assertEqual(ws["R38"].value, summary["Failed Requests"])
 
 
 if __name__ == "__main__":

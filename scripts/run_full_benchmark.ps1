@@ -9,7 +9,7 @@ param(
 
     [string]$ExcelModelName = "Kimi2.5",
 
-    [int[]]$ParallelLevels = @(8, 16, 32, 64),
+    [string[]]$ParallelLevels = @("8", "16", "32", "64"),
 
     [int]$OutputTokens = 2048,
 
@@ -37,6 +37,39 @@ $targetXlsx = Join-Path $RunDir "模型测试汇总表-new.xlsx"
 
 New-Item -ItemType Directory -Force -Path $logsDir, $shortRoot, $longRoot | Out-Null
 
+function ConvertTo-ParallelLevels {
+    param([string[]]$Values)
+
+    $levels = @()
+    foreach ($value in $Values) {
+        if ($null -eq $value) {
+            continue
+        }
+        foreach ($part in ([string]$value -split ",")) {
+            $trimmed = $part.Trim()
+            if (-not $trimmed) {
+                continue
+            }
+            $level = 0
+            if (-not [int]::TryParse($trimmed, [ref]$level)) {
+                throw "ParallelLevels must be comma-separated integers, got '$value'"
+            }
+            if ($level -le 0 -or $level -gt 1024) {
+                throw "ParallelLevels contains unreasonable concurrency value '$level'"
+            }
+            $levels += $level
+        }
+    }
+
+    if ($levels.Count -eq 0) {
+        throw "ParallelLevels must contain at least one concurrency value"
+    }
+
+    return [int[]]$levels
+}
+
+$ParallelLevels = ConvertTo-ParallelLevels -Values $ParallelLevels
+
 if ($TotalTimeoutSec -le 0) {
     throw "TotalTimeoutSec must be greater than 0"
 }
@@ -63,11 +96,15 @@ function Redact-TextFile {
     if ($null -eq $text) {
         return
     }
+    $redacted = $text
     if ($Secret) {
-        $text = $text.Replace($Secret, "[REDACTED]")
+        $redacted = $redacted.Replace($Secret, "[REDACTED]")
     }
-    $text = $text -replace "sk-[A-Za-z0-9_-]+", "sk-[REDACTED]"
-    Set-Content -LiteralPath $Path -Value $text -NoNewline -Encoding UTF8
+    $redacted = $redacted -replace "sk-[A-Za-z0-9_-]+", "sk-[REDACTED]"
+    if ($redacted -eq $text) {
+        return
+    }
+    Set-Content -LiteralPath $Path -Value $redacted -NoNewline -Encoding UTF8
 }
 
 function Redact-BenchmarkArgs {
